@@ -23,7 +23,7 @@ class MainActivity : FlutterActivity() {
 
     private fun scanAudio(): List<Map<String, Any?>> {
         val resolver = contentResolver
-        val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+        val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(
             MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.ALBUM,
