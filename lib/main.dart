@@ -131,7 +131,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
   }
   Future<void> _play(DeviceTrack track) async {
-    try { await widget.handler.loadTracks(tracks, tracks.indexOf(track).clamp(0, tracks.length - 1)); }
+    try { await widget.handler.loadTracks(tracks, tracks.indexOf(track).clamp(0, tracks.length - 1).toInt()); }
     catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Playback failed: $e'))); }
   }
   String _time(int ms) {
