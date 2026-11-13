@@ -1,0 +1,102 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [opentune-next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build release APK (Android 7+)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate complete Android Gradle scaffold
+        run: |
+          flutter create --platforms=android --org com.example --project-name opentune /tmp/opentune-scaffold
+          rm -rf android
+          cp -a /tmp/opentune-scaffold/android ./android
+          mkdir -p android/app/src/main/kotlin/com/example/opentune
+          cp ci/android/MainActivity.kt android/app/src/main/kotlin/com/example/opentune/MainActivity.kt
+
+      - name: Configure Android 7 minimum and media playback service
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          gradle = Path('android/app/build.gradle')
+          if not gradle.exists():
+              gradle = Path('android/app/build.gradle.kts')
+          s = gradle.read_text()
+          if gradle.suffix == '.kts':
+              s, n = re.subn(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 24', s)
+          else:
+              s, n = re.subn(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 24', s)
+              if not n:
+                  s, n = re.subn(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 24', s)
+          if not n:
+              raise SystemExit('Could not set minSdk to 24 in generated Gradle file')
+          gradle.write_text(s)
+
+          manifest = Path('android/app/src/main/AndroidManifest.xml')
+          s = manifest.read_text()
+          permissions = '''
+              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+          '''
+          s = s.replace('<application', permissions + '\n    <application', 1)
+          service = '''
+                  <service
+                      android:name="com.ryanheise.audioservice.AudioService"
+                      android:foregroundServiceType="mediaPlayback"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.media.browse.MediaBrowserService" />
+                      </intent-filter>
+                  </service>
+                  <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MEDIA_BUTTON" />
+                      </intent-filter>
+                  </receiver>
+          '''
+          s = s.replace('</application>', service + '\n    </application>', 1)
+          manifest.write_text(s)
+          PY
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Analyze Dart sources
+        run: flutter analyze
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Publish APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenTune-Android-APK
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
